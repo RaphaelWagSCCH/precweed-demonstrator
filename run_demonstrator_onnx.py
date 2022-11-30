@@ -103,11 +103,14 @@ def detect():
     so = ort.SessionOptions()
     so.log_severity_level = 3
     session = ort.InferenceSession(onnx_model, sess_options=so, providers=providers)
+    outname = [i.name for i in session.get_outputs()]
+    inname = [i.name for i in session.get_inputs()]
 
     # cam = WebcamVideoStream(gstreamer_pipeline(flip_method=2), cv2.CAP_GSTREAMER).start()
     cam = WebcamVideoStream(0, None).start()
     fps = 0.0
     tic = time.time()
+
     while True:
         im0s = cam.read()  # BGR
         # Padded resize
@@ -120,8 +123,7 @@ def detect():
         img = img.astype(np.float32)
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
 
-        outname = [i.name for i in session.get_outputs()]
-        inname = [i.name for i in session.get_inputs()]
+
 
         inp = {inname[0]: img}
 
