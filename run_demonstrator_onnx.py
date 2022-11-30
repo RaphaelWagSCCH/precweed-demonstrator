@@ -1,19 +1,26 @@
 import argparse
 import time
-from pathlib import Path
 
 import cv2
 import torch
 import numpy as np
-import torch.backends.cudnn as cudnn
 from numpy import random
 import onnxruntime as ort
 
 from models.experimental import attempt_load
-from utils.general import check_img_size, non_max_suppression, scale_coords, set_logging
-from utils.plots import plot_one_box
-from utils.torch_utils import select_device, TracedModel
+from utils.general import check_img_size, set_logging
+from utils.torch_utils import select_device
 from utils.videostream import WebcamVideoStream
+
+
+def show_fps(img, fps):
+    """Draw fps number at top-left corner of the image."""
+    font = cv2.FONT_HERSHEY_PLAIN
+    line = cv2.LINE_AA
+    fps_text = 'FPS: {:.2f}'.format(fps)
+    cv2.putText(img, fps_text, (11, 20), font, 1.0, (32, 32, 32), 4, line)
+    cv2.putText(img, fps_text, (10, 20), font, 1.0, (240, 240, 240), 1, line)
+    return img
 
 
 def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleup=True, stride=32):
@@ -79,10 +86,8 @@ def detect():
     # Initialize
     set_logging()
     device = select_device()
-    half = device.type != 'cpu'  # half precision only supported on CUDA
     cuda = torch.cuda.is_available()
     providers = ['CUDAExecutionProvider', 'CPUExecutionProvider'] if cuda else ['CPUExecutionProvider']
-    session = ort.InferenceSession(onnx_model, providers=providers)
 
     # Load model
     model = attempt_load(weights, map_location=device)  # load FP32 model
@@ -91,7 +96,13 @@ def detect():
 
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
+    del model
     colors = {name: [random.randint(0, 255) for _ in range(3)] for i, name in enumerate(names)}
+
+    # create onnx session
+    so = ort.SessionOptions()
+    so.log_severity_level = 3
+    session = ort.InferenceSession(onnx_model, sess_options=so, providers=providers)
 
     # cam = WebcamVideoStream(gstreamer_pipeline(flip_method=2), cv2.CAP_GSTREAMER).start()
     cam = WebcamVideoStream(0, None).start()
@@ -103,7 +114,7 @@ def detect():
         img, ratio, dwdh = letterbox(im0s, imgsz, auto=False, stride=stride)
 
         # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3xHxW
         img = np.expand_dims(img, 0)
         img = np.ascontiguousarray(img)
         img = img.astype(np.float32)
@@ -131,7 +142,7 @@ def detect():
             cv2.putText(im0s, name, (box[0], box[1] - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.75, [225, 255, 255], thickness=2)
 
         # show results
-        # im0 = show_fps(im0, fps)
+        im0s = show_fps(im0s, fps)
         cv2.imshow('yolo inference', im0s)
         toc = time.time()
         curr_fps = 1.0 / (toc - tic)
@@ -140,13 +151,13 @@ def detect():
         fps = curr_fps if fps == 0.0 else (fps * 0.95 + curr_fps * 0.05)
         tic = toc
         cv2.waitKey(1)
-        print(fps)
+
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='weights/yolov7-tiny.pt', help='model.pt path(s)')
-    parser.add_argument('--onnx-model', type=str, default='weights/yolov7-tiny-640.onnx', help='path to onnx model')
+    parser.add_argument('--onnx-model', type=str, default='weights/yolov7-tiny-320.onnx', help='path to onnx model')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     opt = parser.parse_args()
 
